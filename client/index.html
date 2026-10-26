@@ -55,6 +55,10 @@ html.r3d .home { background: linear-gradient(90deg, rgba(26,18,44,.86) 0%, rgba(
 .logo { display: block; width: 112%; max-width: 460px; height: auto; margin: 0 0 0 -14px; filter: drop-shadow(0 8px 0 rgba(26,18,44,.35)) drop-shadow(0 18px 30px rgba(0,0,0,.35)); }
 .logo text { font: 800 86px var(--display); paint-order: stroke; stroke: #fff7ea; stroke-width: 14px; stroke-linejoin: round; }
 .home .tag { margin: 0 0 18px; font-size: 15px; color: #fff7ea; text-shadow: 0 2px 8px rgba(0,0,0,.6); max-width: 360px; }
+.stats { margin: -8px 0 14px; font-size: 13px; font-weight: 800; color: #fff7ea; text-shadow: 0 2px 6px rgba(0,0,0,.6); }
+.stats i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #7fdc5a; box-shadow: 0 0 8px #7fdc5a; margin-right: 6px; animation: pulse 1.6s infinite; }
+.stats b { color: #ffd27a; } .stats small { display: block; font-weight: 700; opacity: .8; font-size: 12px; margin-top: 2px; }
+@keyframes pulse { 50% { opacity: .45; } }
 .home .input { width: 260px; text-align: left; padding: 10px 16px; border-radius: 999px; border: 2px solid rgba(255,247,234,.5); background: rgba(255,247,234,.94); font-size: 16px; }
 /* menu entries: big words on the scene, an arrow slides in on hover or focus */
 .home .btn { display: block; width: auto; margin: 10px 0 0; padding: 2px 0 2px 30px; position: relative; background: none; box-shadow: none; border-radius: 0; text-align: left;
@@ -244,6 +248,7 @@ html.r3d .home { background: linear-gradient(90deg, rgba(26,18,44,.86) 0%, rgba(
       <text x="200" y="172" text-anchor="middle"><tspan fill="#2bb3a3" rotate="6">T</tspan><tspan fill="#ff6b4a" rotate="-5" dy="5">u</tspan><tspan fill="#6cc24a" rotate="7" dy="-6">m</tspan><tspan fill="#ffb347" rotate="-6" dy="4">b</tspan><tspan fill="#7a4fd0" rotate="9" dy="-3">l</tspan><tspan fill="#ff6b4a" rotate="-8" dy="6">e</tspan></text>
     </svg>
     <p class="tag">Cặp đôi tí hon vượt bàn học khổng lồ, đẩy đội khác té nhào để ghi điểm</p>
+    <div id="homeStats" class="stats hidden"></div>
     <input id="nameIn" class="input" maxlength="14" placeholder="Tên của bạn" autocomplete="nickname">
     <div id="homeMain">
       <button id="playBtn" class="btn">Chơi nhanh</button>

@@ -66,8 +66,12 @@ function connect() {
     const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
     G.ws = ws;
     ws.onopen = () => ok();
-    ws.onerror = () => fail(new Error('ws'));
-    ws.onclose = () => { if (G.state !== 'menu') { toMenu(); homeErr('Mất kết nối tới máy chủ. Thử lại nhé.'); } };
+    ws.onerror = () => { fail(new Error('ws')); $('homeStats').classList.add('hidden'); };
+    ws.onclose = () => {
+      $('homeStats').classList.add('hidden');
+      if (G.state !== 'menu') { toMenu(); homeErr('Mất kết nối tới máy chủ. Thử lại nhé.'); }
+      setTimeout(() => { if (G.state === 'menu' && (!G.ws || G.ws.readyState > 1)) connect().catch(() => {}); }, 5000); // the server restarted: look again
+    };
     ws.onmessage = (e) => onMsg(JSON.parse(e.data));
   });
 }
@@ -76,6 +80,7 @@ const sendMsg = (m) => { if (G.ws && G.ws.readyState === 1) G.ws.send(JSON.strin
 function onMsg(m) {
   if (m.t === 'hello') G.myId = m.id;
   else if (m.t === 'lobby') { G.state = 'lobby'; homeView('lobby'); lobbyView(m); }
+  else if (m.t === 'stats') homeStats(m);
   else if (m.t === 'err') { G.state = 'menu'; homeView(G.mode === 'join' ? 'join' : 'main'); homeErr(m.msg); }
   else if (m.t === 'start') startMatch(m);
   else if (m.t === 'snap') onSnap(m);
@@ -87,7 +92,7 @@ function onMsg(m) {
 function startMatch(m) {
   G.state = 'play'; G.size = m.size; G.scoreWin = m.scoreWin || C.SCORE_WIN;
   G.info.clear();
-  for (const [id, team, slot, name, bot] of m.players) G.info.set(id, { team, slot, name, bot });
+  for (const [id, team, slot, name, bot] of m.players) G.info.set(id, { team, slot, name: bot ? name + ' 🤖' : name, bot });
   G.teams = Math.max(...m.players.map((p) => p[1])) + 1;
   G.map = SIM.makeMap(m.seed);
   G.snaps = []; G.off = null; G.offW = []; DELAY = 0.12; G.pend = []; G.seq = 0; G.me = null; G.prev = null; G.shots.clear(); G.drawn.clear(); G.shotCd = 0; G.acc = 0; G.items = []; G.bt = new Map(); G.sl = new Map();
@@ -883,7 +888,7 @@ function showEnd(m) {
   const teams = [];
   for (let t = 0; t < m.scores.length; t++) {
     const rows = m.table.filter((r) => r[1] === t);
-    teams.push({ t, score: m.scores[t], place: rows.length ? rows[0][2] : 99, names: rows.map((r) => (G.info.get(r[0]) || { name: '?' }).name + ((G.info.get(r[0]) || {}).bot ? ' 🤖' : '')), kills: rows.reduce((s, r) => s + r[3], 0) });
+    teams.push({ t, score: m.scores[t], place: rows.length ? rows[0][2] : 99, names: rows.map((r) => (G.info.get(r[0]) || { name: '?' }).name), kills: rows.reduce((s, r) => s + r[3], 0) });
   }
   teams.sort((a, b) => a.place - b.place);
   setTimeout(() => {
@@ -908,6 +913,12 @@ function homeView(v) { // main | join | lobby
   $('homeMain').classList.toggle('hidden', v !== 'main'); $('homeJoin').classList.toggle('hidden', v !== 'join');
   $('lobby').classList.toggle('hidden', v !== 'lobby'); $('nameIn').classList.toggle('hidden', v === 'lobby'); homeErr('');
   if (v === 'join') setTimeout(() => $('codeIn').focus(), 0);
+}
+function homeStats(m) { // who is around, so a quick match is more likely to find real people
+  const el = $('homeStats'), others = Math.max(0, m.on - 1);
+  el.classList.remove('hidden');
+  el.innerHTML = others ? `<i></i><b>${m.on}</b> người đang online · <b>${m.wait}</b> đang tìm trận · <b>${m.play}</b> đang chơi${m.wait ? '<small>Bấm Chơi nhanh ngay để vào cùng trận!</small>' : ''}`
+    : `<i></i>Chỉ có bạn đang online<small>Chơi nhanh cùng bot, hoặc Tạo phòng rồi gửi link cho bạn bè</small>`;
 }
 function homeErr(t) { $('homeErr').textContent = t; $('homeErr').classList.toggle('hidden', !t); }
 function lobbyText(t) { homeView('lobby'); $('lobby').textContent = t; }
@@ -978,6 +989,7 @@ function joinByCode() { const c = $('codeIn').value.trim().toUpperCase(); if (c.
   if (invite) { $('codeIn').value = invite; homeView('join'); }
   document.documentElement.classList.toggle('r3d', !!R3D.on);
   if (R3D.on && R3D.menu) R3D.menu(true); // [3D] the live desk behind the home card
+  connect().catch(() => {}); // early: the home screen shows who is online (and a sleeping server starts waking up)
   $('menuBtn').onclick = () => pauseMenu(true); $('resumeBtn').onclick = () => pauseMenu(false); $('quitBtn').onclick = quitMatch;
   $('nameIn').addEventListener('keydown', (e) => { if (e.key === 'Enter') play('quick'); });
 })();

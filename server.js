@@ -78,7 +78,7 @@ function startMatch(r) {
   while (players.length < ROOM_SIZE) { players.push(SIM.newPlayer(nextId++, (i / 2) | 0, i % 2, BOT_NAMES[b++ % BOT_NAMES.length], true)); i++; }
   const seed = (Math.random() * 1e9) | 0;
   r.S = SIM.newMatch(seed, players, { matchT: MATCH_T, scoreWin: SCORE_WIN });
-  r.state = 'play';
+  r.state = 'play'; stats();
   for (const p of players) if (p.bot) initBot(p);
   broadcast(r, { t: 'start', seed, size: ROOM_SIZE, matchT: r.S.matchT, scoreWin: r.S.scoreWin, players: players.map((p) => [p.id, p.team, p.slot, p.name, p.bot ? 1 : 0]) });
 }
@@ -123,7 +123,7 @@ function roomTick(r) {
       }
     }
     if (S.over) {
-      r.state = 'end'; r.endT = 8;
+      r.state = 'end'; r.endT = 8; stats();
       broadcast(r, { t: 'end', winner: S.winner, scores: S.score.map(Math.floor), table: S.players.map((p) => [p.id, p.team, p.place, p.kills, Math.round(p.dmg), p.deaths]) });
     }
     if (![...r.clients.values()].length) closeRoom(r);
@@ -131,12 +131,27 @@ function roomTick(r) {
   }
   if (r.state === 'end') { r.endT -= 1 / C.TICK; if (r.endT <= 0) closeRoom(r); }
 }
-function closeRoom(r) { clearTimeout(r.timer); rooms.delete(r); for (const c of r.clients.values()) { c.room = null; send(c.ws, { t: 'closed' }); } }
+function closeRoom(r) { clearTimeout(r.timer); rooms.delete(r); for (const c of r.clients.values()) { c.room = null; send(c.ws, { t: 'closed' }); } stats(); }
+
+/* ---------- who is around: shown on the home screen (sent to everyone not in a match, at most once a second) ---------- */
+const conns = new Set();
+let statsDue = false;
+function stats() {
+  if (statsDue) return; statsDue = true;
+  setTimeout(() => {
+    statsDue = false;
+    let wait = 0, play = 0;
+    for (const r of rooms) { if (r.state === 'play') play += r.clients.size; else if (r.state === 'lobby' && !r.code) wait += r.clients.size; }
+    const m = JSON.stringify({ t: 'stats', on: conns.size, wait, play });
+    for (const c of conns) if (!c.room || c.room.state !== 'play') if (c.ws.readyState === 1) c.ws.send(m);
+  }, 1000);
+}
 
 /* ---------- connections ---------- */
 const wss = new WebSocketServer({ server, maxPayload: 4096 });
 wss.on('connection', (ws) => {
   const c = { id: nextId++, ws, name: 'Người chơi', room: null, queue: [], last: null };
+  conns.add(c); stats();
   send(ws, { t: 'hello', id: c.id, tick: C.TICK });
   ws.on('message', (raw) => {
     let m; try { m = JSON.parse(raw); } catch (e) { return; }
@@ -152,7 +167,8 @@ wss.on('connection', (ws) => {
         if (r.clients.size >= ROOM_SIZE) return send(ws, { t: 'err', msg: 'Phòng ' + code + ' đã đủ người' });
       } else r = openRoom(m.mode === 'create');
       if (r.code && !r.host) r.host = c.id;
-      c.room = r; r.clients.set(c.id, c); c.queue = []; c.started = false; c.last = null; lobbyInfo(r);
+      if (!r.code && r.clients.size) r.wait = Math.min(r.wait + 6, 25); // someone real is waiting: a little longer, so more can join
+      c.room = r; r.clients.set(c.id, c); c.queue = []; c.started = false; c.last = null; lobbyInfo(r); stats();
     } else if (m.t === 'start' && c.room && c.room.code && c.room.host === c.id && c.room.state === 'lobby') startMatch(c.room);
     else if (m.t === 'in' && c.room && c.room.state === 'play') {
       // input: s seq, mx my (-1..1), a angle, f fire (held), j jump (pressed), i interact (held), v the tick on screen
@@ -161,11 +177,12 @@ wss.on('connection', (ws) => {
     } else if (m.t === 'leave') leave(c);
     else if (m.t === 'ping') send(ws, { t: 'pong', c: m.c });
   });
-  ws.on('close', () => leave(c));
+  ws.on('close', () => { leave(c); conns.delete(c); stats(); });
 });
 const clampN = (v) => Math.max(-1, Math.min(1, +v || 0));
 function leave(c) {
   const r = c.room; if (!r) return;
+  stats();
   r.clients.delete(c.id); c.room = null;
   if (r.state === 'play') { const p = r.S.players.find((q) => q.id === c.id); if (p) { p.bot = true; initBot(p); } } // a bot takes over
   else if (r.state === 'lobby') {
