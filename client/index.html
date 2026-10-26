@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#2a1f3d">
+<title>Tiny Tumble</title>
+<meta name="description" content="Tiny Tumble: game co-op cho cặp đôi búp bê tí hon. Vượt bàn học khổng lồ, đẩy đội khác té nhào để ghi điểm.">
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink: #2a1f3d; --ink-soft: #6b5a7e; --paper: #fff7ea; --paper-2: #f6e6cc;
+  --sun: #ffb347; --coral: #ff6b4a; --teal: #2bb3a3; --plum: #7a4fd0; --leaf: #6cc24a;
+  --font: 'Nunito', system-ui, sans-serif; --display: 'Baloo 2', 'Nunito', sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #2a1f3d; color: var(--ink); font-family: var(--font); overflow: hidden; -webkit-user-select: none; user-select: none; touch-action: none; }
+#app { position: fixed; inset: 0; }
+#app canvas { display: block; width: 100%; height: 100%; }
+.hidden { display: none !important; }
+
+/* ---------- start screen: a warm, cosy title card ---------- */
+.screen { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; z-index: 20;
+  background: radial-gradient(120% 90% at 20% 10%, rgba(255,190,110,.55), transparent 55%), radial-gradient(90% 80% at 90% 100%, rgba(43,179,163,.45), transparent 60%), linear-gradient(160deg, #3b2a58, #22183a); }
+.card { width: min(440px, 100%); background: var(--paper); border-radius: 28px; padding: 26px 24px 22px; text-align: center;
+  box-shadow: 0 10px 0 #d9b98c, 0 30px 60px rgba(10,5,30,.5), inset 0 2px 0 #fff; }
+.title { font: 800 46px/0.95 var(--display); margin: 2px 0 6px; color: var(--ink); letter-spacing: -.5px; }
+.title span { color: var(--coral); display: block; }
+.tag { margin: 0 0 18px; color: var(--ink-soft); font-weight: 800; font-size: 14.5px; }
+.input { width: 100%; font: 800 17px var(--font); color: var(--ink); padding: 13px 16px; border-radius: 16px; border: 3px solid #ecd6b3; background: #fffdf8; outline: none; text-align: center; }
+.input:focus { border-color: var(--sun); }
+.btn { margin-top: 14px; width: 100%; border: 0; border-radius: 18px; padding: 15px; font: 800 22px var(--display); color: #fff; cursor: pointer;
+  background: linear-gradient(180deg, #ff8a5c, #ff5a3c); box-shadow: 0 6px 0 #c4402a, 0 12px 20px rgba(120,40,20,.3), inset 0 2px 0 rgba(255,255,255,.4); transition: transform .08s, box-shadow .08s; }
+.btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #c4402a, inset 0 2px 0 rgba(255,255,255,.4); }
+.btn.ghost { background: linear-gradient(180deg, #fff, #f3e3c8); color: var(--ink); box-shadow: 0 6px 0 #d2b48a, inset 0 2px 0 #fff; font-size: 18px; }
+.how { margin-top: 14px; text-align: left; font-size: 13px; color: var(--ink-soft); font-weight: 700; line-height: 1.5; background: var(--paper-2); border-radius: 16px; padding: 8px 14px; }
+.how summary { cursor: pointer; font-weight: 900; color: var(--ink); list-style: none; text-align: center; }
+.how summary::-webkit-details-marker { display: none; }
+.how summary::after { content: ' ▾'; } .how[open] summary::after { content: ' ▴'; }
+.how p { margin: 8px 0 2px; }
+.how b { color: var(--ink); }
+.lobby { margin-top: 12px; font-weight: 800; color: var(--ink-soft); }
+.lobby .dots { display: flex; gap: 6px; justify-content: center; margin-top: 8px; flex-wrap: wrap; }
+.lobby .dot { width: 26px; height: 26px; border-radius: 50%; background: #ecd6b3; box-shadow: inset 0 -3px 0 rgba(0,0,0,.1); }
+.lobby .dot.on { background: linear-gradient(180deg, #ffc46b, #ff8a3c); }
+/* home: a title screen, text straight on the live 3D desk (no card); a dark wash on the left keeps it readable */
+.home { place-items: center start; padding: 24px 24px 24px calc(56px + env(safe-area-inset-left)); }
+html.r3d .home { background: linear-gradient(90deg, rgba(26,18,44,.86) 0%, rgba(26,18,44,.55) 30%, rgba(26,18,44,.12) 52%, rgba(26,18,44,0) 64%),
+  linear-gradient(0deg, rgba(26,18,44,.5), rgba(26,18,44,0) 30%); }
+.home .card { width: min(400px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; padding: 0; text-align: left;
+  background: none; box-shadow: none; border-radius: 0; scrollbar-width: none; }
+.home .card::-webkit-scrollbar { display: none; }
+.logo { display: block; width: 112%; max-width: 460px; height: auto; margin: 0 0 0 -14px; filter: drop-shadow(0 8px 0 rgba(26,18,44,.35)) drop-shadow(0 18px 30px rgba(0,0,0,.35)); }
+.logo text { font: 800 86px var(--display); paint-order: stroke; stroke: #fff7ea; stroke-width: 14px; stroke-linejoin: round; }
+.home .tag { margin: 0 0 18px; font-size: 15px; color: #fff7ea; text-shadow: 0 2px 8px rgba(0,0,0,.6); max-width: 360px; }
+.home .input { width: 260px; text-align: left; padding: 10px 16px; border-radius: 999px; border: 2px solid rgba(255,247,234,.5); background: rgba(255,247,234,.94); font-size: 16px; }
+/* menu entries: big words on the scene, an arrow slides in on hover or focus */
+.home .btn { display: block; width: auto; margin: 10px 0 0; padding: 2px 0 2px 30px; position: relative; background: none; box-shadow: none; border-radius: 0; text-align: left;
+  color: #fff7ea; font: 800 28px/1.15 var(--display); text-shadow: 0 3px 0 rgba(26,18,44,.7), 0 6px 18px rgba(0,0,0,.45); transition: transform .15s, color .15s; }
+.home .btn::before { content: '▸'; position: absolute; left: 4px; opacity: 0; transform: translateX(-8px); transition: opacity .15s, transform .15s; color: var(--sun); }
+.home .btn:hover, .home .btn:focus-visible { color: var(--sun); transform: translateX(6px); outline: none; }
+.home .btn:hover::before, .home .btn:focus-visible::before { opacity: 1; transform: none; }
+.home .btn:active { transform: translateX(6px) scale(.97); box-shadow: none; }
+.home #playBtn { font-size: 40px; color: #ffd27a; margin-top: 16px; }
+.home #playBtn::before { opacity: 1; transform: none; color: var(--coral); }
+.home [data-act=start] { font-size: 36px; color: #ffd27a; margin-top: 14px; }
+.home .row2 { display: block; }
+.home .row2 .btn { margin-top: 6px; font-size: 26px; padding: 2px 0 2px 30px; }
+.home .btn.ghost { color: #fff7ea; }
+.input.code { width: 220px; font: 800 30px var(--display); letter-spacing: 10px; text-transform: uppercase; text-align: center; padding: 6px; }
+.home .err { color: #ffb3a3; text-shadow: 0 2px 6px rgba(0,0,0,.6); }
+.home .lobby { color: #fff7ea; text-shadow: 0 2px 6px rgba(0,0,0,.6); text-align: left; }
+.home .lobby .dots { justify-content: flex-start; }
+.room .code { font: 800 64px/1 var(--display); letter-spacing: 10px; color: #ffd27a; margin: 2px 0 6px; text-shadow: 0 4px 0 rgba(26,18,44,.7), 0 8px 24px rgba(0,0,0,.4); }
+.room .share { border: 0; background: rgba(255,247,234,.94); color: var(--ink); font: 900 13px var(--font); border-radius: 999px; padding: 7px 14px; cursor: pointer; text-shadow: none; }
+.duos { display: grid; gap: 6px; margin: 14px 0 4px; text-align: left; max-width: 340px; }
+.duos div { background: rgba(26,18,44,.55); border: 1px solid rgba(255,247,234,.18); border-radius: 999px; padding: 6px 14px; font-size: 14px; color: #fff7ea; backdrop-filter: blur(4px); }
+.duos i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+.duos .bot { color: rgba(255,247,234,.55); font-weight: 700; }
+.small { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); }
+.home .small { color: rgba(255,247,234,.8); }
+.home .how { margin-top: 14px; background: none; padding: 0; color: rgba(255,247,234,.85); text-shadow: 0 2px 6px rgba(0,0,0,.6); }
+.home .how summary { text-align: left; color: #fff7ea; font: 800 18px var(--display); padding-left: 30px; }
+.home .how b { color: #ffd27a; }
+.home .how[open] { background: rgba(26,18,44,.6); border-radius: 16px; padding: 10px 14px; backdrop-filter: blur(4px); }
+.home .how[open] summary { padding-left: 0; }
+.home-foot { position: absolute; right: calc(16px + env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); color: rgba(255,247,234,.75); font: 800 12px var(--font); text-shadow: 0 1px 3px rgba(0,0,0,.5); }
+@media (max-height: 560px) { .logo { max-width: 330px; } .home #playBtn { font-size: 32px; } .home .btn, .home .row2 .btn { font-size: 22px; } .home .tag { margin-bottom: 10px; } }
+@media (orientation: portrait) {
+  .home { place-items: end center; padding: 16px 20px calc(20px + env(safe-area-inset-bottom)); }
+  html.r3d .home { background: linear-gradient(0deg, rgba(26,18,44,.9) 0%, rgba(26,18,44,.6) 40%, rgba(26,18,44,0) 62%); }
+  .home .card { max-height: 70vh; text-align: center; }
+  .logo { margin: 0 auto; width: 100%; max-width: 340px; }
+  .home .tag { margin: 0 auto 14px; }
+  .home .input { margin: 0 auto; display: block; text-align: center; }
+  .home .btn, .home .row2 .btn { margin-left: auto; margin-right: auto; padding-left: 0; padding-right: 0; text-align: center; }
+  .home .btn::before { display: none; }
+  .home #playBtn::before { display: inline; position: static; margin-right: 8px; }
+  .home .btn:hover, .home .btn:focus-visible, .home .btn:active { transform: none; }
+  .home .row2 { display: flex; justify-content: center; gap: 22px; }
+  .home .row2 .btn { font-size: 22px; margin: 8px 0 0; }
+  .home .lobby, .home .how summary { text-align: center; padding-left: 0; }
+  .home .lobby .dots { justify-content: center; }
+  .duos { margin-left: auto; margin-right: auto; }
+  .home-foot { display: none; }
+}
+
+
+/* ---------- HUD ---------- */
+#hud { position: absolute; inset: 0; pointer-events: none; z-index: 10; font-weight: 900; }
+.panel { position: absolute; background: rgba(255,247,234,.92); border-radius: 18px; box-shadow: 0 5px 0 rgba(150,104,62,.45), 0 10px 22px rgba(20,10,40,.3), inset 0 2px 0 #fff; }
+#duo { left: calc(12px + env(safe-area-inset-left)); top: calc(12px + env(safe-area-inset-top)); padding: 8px 12px; display: grid; gap: 6px; min-width: 210px; }
+.mate { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: center; font-size: 13px; }
+.mate i { width: 22px; height: 22px; border-radius: 50%; display: block; box-shadow: inset 0 -3px 0 rgba(0,0,0,.18); }
+.mate .bar { height: 12px; border-radius: 6px; background: #ead7bd; overflow: hidden; position: relative; margin-top: 2px; }
+.mate .bar b { position: absolute; inset: 0 auto 0 0; background: linear-gradient(180deg, #8de06a, #4fb33a); border-radius: 6px; transition: width .15s; }
+.mate .bar s { position: absolute; left: 0; top: 0; height: 4px; background: #8ab8ff; border-radius: 2px; }
+.mate.down .bar b { background: linear-gradient(180deg, #ff9b7a, #e5484d); }
+.mate.out { opacity: .5; }
+#score { left: 50%; transform: translateX(-50%); top: calc(12px + env(safe-area-inset-top)); padding: 6px 10px; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+#score .time { font: 800 22px/1 var(--display); min-width: 58px; text-align: center; color: var(--ink); }
+#score .chip { display: flex; align-items: center; gap: 5px; padding: 3px 9px 3px 4px; border-radius: 12px; background: #f3e3c8; font-size: 15px; }
+#score .chip i { width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 -2px 0 rgba(0,0,0,.2); }
+#score .chip.me { box-shadow: 0 0 0 3px var(--ink); }
+#score .chip.own { background: linear-gradient(180deg, #fff3c4, #ffd56b); }
+#status { left: 50%; transform: translateX(-50%); top: calc(64px + env(safe-area-inset-top)); padding: 5px 14px; font-size: 13px; white-space: nowrap; }
+#status.warn { background: linear-gradient(180deg, #ffe9e0, #ffc9b5); color: #8a2a14; }
+#info { right: calc(64px + env(safe-area-inset-right)); top: calc(12px + env(safe-area-inset-top)); padding: 8px 14px; font-size: 14px; }
+#menuBtn { position: absolute; right: calc(12px + env(safe-area-inset-right)); top: calc(12px + env(safe-area-inset-top)); width: 42px; height: 42px; border: 0; border-radius: 14px; pointer-events: auto; cursor: pointer;
+  background: rgba(255,247,234,.92); color: var(--ink); font: 900 16px var(--font); box-shadow: 0 4px 0 rgba(150,104,62,.45), 0 8px 16px rgba(20,10,40,.3), inset 0 2px 0 #fff; }
+.touchui #menuBtn { width: 38px; height: 38px; top: calc(10px + env(safe-area-inset-top)); }
+#pause .card { width: min(360px, 100%); } #pause .tag { margin-bottom: 4px; }
+#pause .screen, .screen.dim { background: rgba(26,18,44,.62); backdrop-filter: blur(3px); }
+#info b, #weapon b { font: 800 20px var(--display); color: var(--coral); margin-left: 6px; }
+#weapon { right: calc(12px + env(safe-area-inset-right)); bottom: calc(14px + env(safe-area-inset-bottom)); padding: 7px 14px; font-size: 14px; display: flex; align-items: center; }
+#hint { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(22px + env(safe-area-inset-bottom)); max-width: min(620px, calc(100% - 32px)); text-align: center;
+  background: rgba(42,31,61,.82); color: #fff; padding: 8px 16px; border-radius: 14px; font-size: 14px; line-height: 1.4; }
+#hint kbd { background: #fff7ea; color: var(--ink); border-radius: 6px; padding: 0 6px; font: 900 13px var(--font); box-shadow: 0 2px 0 #d2b48a; }
+.btnT { position: absolute; display: none; pointer-events: auto; border: 0; border-radius: 50%; color: #fff; font: 800 15px/1 var(--display);
+  box-shadow: 0 6px 0 rgba(0,0,0,.25), 0 12px 20px rgba(60,20,10,.3); -webkit-tap-highlight-color: transparent; }
+.touchui .btnT { display: block; }
+#jumpBtn { right: calc(26px + env(safe-area-inset-right)); bottom: calc(34px + env(safe-area-inset-bottom)); width: 84px; height: 84px; background: radial-gradient(circle at 35% 30%, #a8f08a, #4fb33a 65%); }
+#useBtn { right: calc(124px + env(safe-area-inset-right)); bottom: calc(28px + env(safe-area-inset-bottom)); width: 66px; height: 66px; background: radial-gradient(circle at 35% 30%, #ffd08a, #ff8a3c 60%, #e2632a); }
+#msg { position: absolute; left: 50%; top: 30%; transform: translate(-50%, -50%); text-align: center; color: #fff; font: 800 34px/1.1 var(--display); text-shadow: 0 3px 0 rgba(42,31,61,.6), 0 8px 24px rgba(0,0,0,.4); width: 90%; }
+#msg small { display: block; font: 800 16px var(--font); margin-top: 6px; opacity: .92; }
+#feed { position: absolute; right: calc(12px + env(safe-area-inset-right)); top: calc(70px + env(safe-area-inset-top)); display: grid; gap: 5px; justify-items: end; font-size: 12.5px; }
+#feed div { background: rgba(42,31,61,.72); color: #fff; padding: 4px 10px; border-radius: 10px; animation: fade 4s forwards; max-width: min(340px, 70vw); text-align: right; }
+@keyframes fade { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+#mini { right: calc(12px + env(safe-area-inset-right)); bottom: calc(66px + env(safe-area-inset-bottom)); width: 140px; height: 140px; padding: 6px; }
+#mini { pointer-events: auto; cursor: zoom-in; touch-action: none; }
+#mini canvas { width: 100%; height: 100%; border-radius: 12px; display: block; }
+#mini small { position: absolute; right: 0; top: -19px; white-space: nowrap; text-align: right; font-size: 11px; color: #fff7ea; text-shadow: 0 1px 2px #2a1f3d; }
+.touchui #mini small { display: none; }
+#lookBtn { left: calc(12px + env(safe-area-inset-left)); top: calc(196px + env(safe-area-inset-top)); width: 52px; height: 52px; font-size: 12px; background: radial-gradient(circle at 35% 30%, #b8d8ff, #5b8fd6 65%); }
+#lookBtn.on { background: radial-gradient(circle at 35% 30%, #fff3c4, #ffb84a 65%); }
+@media (orientation: portrait) { .touchui #lookBtn { top: auto; left: calc(16px + env(safe-area-inset-left)); bottom: calc(200px + env(safe-area-inset-bottom)); } }
+.touchui #mini { width: 92px; height: 92px; right: auto; bottom: auto; left: calc(12px + env(safe-area-inset-left)); top: calc(96px + env(safe-area-inset-top)); }
+.touchui #duo { min-width: 160px; padding: 6px 10px; gap: 4px; } .touchui .mate { font-size: 11.5px; }
+.touchui #info { font-size: 12px; padding: 6px 10px; right: calc(56px + env(safe-area-inset-right)); } .touchui #info b, .touchui #weapon b { font-size: 16px; }
+.touchui #weapon { bottom: auto; top: calc(56px + env(safe-area-inset-top)); font-size: 12px; padding: 5px 10px; }
+.touchui #feed { top: calc(100px + env(safe-area-inset-top)); }
+.touchui #hint { bottom: auto; top: calc(108px + env(safe-area-inset-top)); font-size: 12.5px; }
+.touchui #score { padding: 4px 8px; gap: 4px; } .touchui #score .time { font-size: 18px; min-width: 46px; } .touchui #score .chip { font-size: 13px; padding: 2px 7px 2px 3px; }
+.touchui #status { top: calc(52px + env(safe-area-inset-top)); font-size: 11.5px; }
+@media (max-width: 720px) { #status { max-width: calc(100% - 24px); white-space: normal; text-align: center; } }
+/* phones held upright: scores on top, then the duo and the weapon, the map on the right, hints under the duo */
+@media (orientation: portrait) {
+  .touchui #score { top: calc(8px + env(safe-area-inset-top)); }
+  .touchui #status { top: calc(46px + env(safe-area-inset-top)); }
+  .touchui #duo { top: calc(84px + env(safe-area-inset-top)); min-width: 150px; }
+  .touchui #info { display: none; }
+  .touchui #weapon { top: calc(84px + env(safe-area-inset-top)); }
+  .touchui #mini { left: auto; right: calc(12px + env(safe-area-inset-right)); top: calc(126px + env(safe-area-inset-top)); width: 84px; height: 84px; }
+  .touchui #hint { top: calc(160px + env(safe-area-inset-top)); left: 12px; right: 108px; transform: none; max-width: none; }
+  .touchui #feed { top: calc(220px + env(safe-area-inset-top)); }
+  #msg { font-size: 26px; top: 36%; }
+}
+
+/* ---------- 3D view overlays: vignette, tags, progress rings, damage numbers ---------- */
+#vig3d { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(255,196,120,.16), rgba(255,196,120,0) 24%, rgba(0,0,0,0) 76%, rgba(50,24,62,.3)), radial-gradient(120% 95% at 50% 46%, rgba(30,10,40,0) 55%, rgba(30,10,40,.5)); }
+.ts3 { position: absolute; left: 0; right: 0; height: 26%; pointer-events: none; -webkit-backdrop-filter: blur(2.5px); backdrop-filter: blur(2.5px); }
+.ts3.top { top: 0; -webkit-mask-image: linear-gradient(#000, transparent); mask-image: linear-gradient(#000, transparent); }
+.ts3.bot { bottom: 0; height: 18%; -webkit-mask-image: linear-gradient(transparent, #000); mask-image: linear-gradient(transparent, #000); }
+#tags3d { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+#tags3d > div { position: absolute; left: 0; top: 0; will-change: transform; }
+.t3 { width: 120px; margin: -32px 0 0 -60px; text-align: center; }
+.t3 b { display: block; font: 900 13px/1.15 var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 0 #2a1f3d, 1px 0 0 #2a1f3d, -1px 0 0 #2a1f3d, 0 -1px 0 #2a1f3d, 1px 1px 1px #2a1f3d, -1px -1px 1px #2a1f3d, 0 0 3px #2a1f3d; }
+.t3 i { display: block; position: relative; width: 48px; height: 8px; margin: 6px auto 0; border-radius: 4px; background: rgba(42,31,61,.72); }
+.t3 i u { position: absolute; left: 1px; top: 1px; bottom: 1px; border-radius: 3px; background: #7fdc5a; }
+.t3 i s { position: absolute; left: 1px; top: -5px; height: 4px; border-radius: 2px; background: #8ab8ff; }
+.t3 em, .r3 { display: none; width: 40px; height: 40px; border-radius: 50%; background: conic-gradient(var(--c, #ffe08a) calc(var(--k, 0) * 1turn), rgba(42,31,61,.35) 0);
+  -webkit-mask: radial-gradient(circle, transparent 12px, #000 13px); mask: radial-gradient(circle, transparent 12px, #000 13px); }
+.t3 em { position: absolute; left: 40px; top: 52px; }
+.r3 { display: block; margin: -20px 0 0 -20px; }
+.t3 q { display: none; position: absolute; left: 0; right: 0; top: -30px; font: 900 26px/1 var(--font); color: #bff7a8; quotes: none; text-shadow: 0 2px 0 #2a1f3d, 0 0 4px #2a1f3d; animation: hop3 .5s ease-in-out infinite alternate; }
+@keyframes hop3 { to { transform: translateY(-7px); } }
+.f3 { font: 800 22px/1 var(--display); white-space: nowrap; margin: -12px 0 0 -30px; width: 60px; text-align: center; text-shadow: 0 2px 0 #2a1f3d, 2px 0 0 #2a1f3d, -2px 0 0 #2a1f3d, 0 -2px 0 #2a1f3d, 0 0 5px #2a1f3d; }
+.touchui .t3 b { font-size: 11.5px; }
+
+/* touch sticks */
+.stick { position: absolute; width: 130px; height: 130px; border-radius: 50%; background: rgba(255,247,234,.18); border: 3px solid rgba(255,247,234,.45); pointer-events: none; display: none; }
+.stick b { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; background: rgba(255,247,234,.85); box-shadow: 0 4px 0 rgba(150,104,62,.5); }
+.touchui .stick { display: block; }
+#stickL { left: calc(30px + env(safe-area-inset-left)); bottom: calc(30px + env(safe-area-inset-bottom)); }
+#stickR { right: calc(40px + env(safe-area-inset-right)); bottom: calc(150px + env(safe-area-inset-bottom)); }
+
+/* end */
+.end .card { width: min(480px, 100%); }
+.rank { font: 800 64px/1 var(--display); color: var(--coral); margin: 4px 0; }
+.table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+.table td { padding: 6px 4px; border-bottom: 2px dashed #ecd6b3; }
+.table tr.me td { background: #fff1d6; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="hud" class="hidden">
+  <div id="duo" class="panel"></div>
+  <div id="score" class="panel"></div>
+  <div id="status" class="panel"></div>
+  <div id="info" class="panel"></div>
+  <div id="weapon" class="panel"></div>
+  <div id="feed"></div>
+  <div id="mini" class="panel"><canvas id="miniCv" width="240" height="240"></canvas><small>Q: xem cả map · giữ kéo để lia</small></div>
+  <div id="msg"></div>
+  <div id="hint" class="hidden"></div>
+  <button id="menuBtn" title="Tạm dừng (Esc)">❚❚</button>
+  <button id="jumpBtn" class="btnT">NHẢY</button>
+  <button id="useBtn" class="btnT">DÙNG</button>
+  <button id="lookBtn" class="btnT">XEM</button>
+  <div class="stick" id="stickL"><b></b></div>
+  <div class="stick" id="stickR"><b></b></div>
+</div>
+<div id="start" class="screen home">
+  <div class="card">
+    <svg class="logo" viewBox="0 0 400 190" role="img" aria-label="Tiny Tumble">
+      <text x="200" y="82" text-anchor="middle"><tspan fill="#ff6b4a" rotate="-7">T</tspan><tspan fill="#ffb347" rotate="5" dy="-4">i</tspan><tspan fill="#2bb3a3" rotate="-4" dy="6">n</tspan><tspan fill="#7a4fd0" rotate="8" dy="-5">y</tspan></text>
+      <text x="200" y="172" text-anchor="middle"><tspan fill="#2bb3a3" rotate="6">T</tspan><tspan fill="#ff6b4a" rotate="-5" dy="5">u</tspan><tspan fill="#6cc24a" rotate="7" dy="-6">m</tspan><tspan fill="#ffb347" rotate="-6" dy="4">b</tspan><tspan fill="#7a4fd0" rotate="9" dy="-3">l</tspan><tspan fill="#ff6b4a" rotate="-8" dy="6">e</tspan></text>
+    </svg>
+    <p class="tag">Cặp đôi tí hon vượt bàn học khổng lồ, đẩy đội khác té nhào để ghi điểm</p>
+    <input id="nameIn" class="input" maxlength="14" placeholder="Tên của bạn" autocomplete="nickname">
+    <div id="homeMain">
+      <button id="playBtn" class="btn">Chơi nhanh</button>
+      <div class="row2"><button id="createBtn" class="btn ghost">＋ Tạo phòng</button><button id="joinBtn" class="btn ghost"># Vào bằng mã</button></div>
+    </div>
+    <div id="homeJoin" class="hidden">
+      <input id="codeIn" class="input code" style="margin-top:10px" maxlength="4" placeholder="MÃ" autocapitalize="characters" autocomplete="off" spellcheck="false">
+      <button id="joinGo" class="btn">Vào phòng</button>
+      <button id="joinBack" class="btn ghost">← Quay lại</button>
+    </div>
+    <div id="lobby" class="lobby hidden"></div>
+    <div id="homeErr" class="err hidden"></div>
+    <details class="how">
+      <summary>Cách chơi</summary>
+      <p><b>WASD</b> đi · <b>Space</b> nhảy · <b>chuột</b> ngắm, bắn · <b>F</b> mở rương, gạt cần, đổi súng, làm bệ · giữ <b>Q</b> xem cả map · <b>Esc</b> tạm dừng</p>
+      <p>Đường mỗi trận một khác, nhiều chỗ cần <b>hai người</b>: giữ nút mở cổng, giữ <b>F</b> làm bệ cho bạn bật cao, đứng bập bênh, gạt hai cần cùng lúc.</p>
+      <p>Mỗi lần <b>đẩy địch rơi</b> khỏi bàn cờ, vành gỗ hay đường đi là <b>+1 điểm</b>. Súng đồ chơi đẩy nhiều hơn gây sát thương, và <b>càng mất máu càng văng xa</b>. Rương vàng nằm trên các <b>tháp sách</b>.</p>
+    </details>
+  </div>
+  <div class="home-foot">Tiny Tumble · v0.1</div>
+</div>
+<div id="pause" class="screen dim hidden">
+  <div class="card">
+    <h2 class="title" style="font-size:34px">Tạm nghỉ</h2>
+    <p class="tag">Trận vẫn đang diễn ra, đồng đội đang chờ bạn đó!</p>
+    <button id="resumeBtn" class="btn">Chơi tiếp</button>
+    <button id="quitBtn" class="btn ghost">Thoát trận</button>
+  </div>
+</div>
+<div id="end" class="screen end hidden">
+  <div class="card">
+    <div class="tag" id="endTitle">Kết quả</div>
+    <div class="rank" id="endRank">#1</div>
+    <table class="table" id="endTable"></table>
+    <button id="againBtn" class="btn">Chơi tiếp</button>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.6.6/dist/pixi.min.js"></script>
+<script src="/shared/sim.js"></script>
+<script src="/client/js/art.js"></script>
+<script src="/client/js/render3d.js"></script>
+<script src="/client/js/render3d_doll.js"></script>
+<script src="/client/js/game.js"></script>
+</body>
+</html>
