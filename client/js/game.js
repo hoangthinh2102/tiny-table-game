@@ -18,7 +18,7 @@ const G = {
   app: null, ws: null, myId: 0, state: 'menu', map: null, size: 8, teams: 4, info: new Map(), // id -> { team, slot, name, bot }
   snaps: [], off: null, last: null, pend: [], seq: 0, me: null, prev: null, vis: { x: 0, y: 0, z: 0 }, acc: 0, predT: 0,
   W: { t: 0, on: new Set(), mate: null }, items: [], bt: new Map(), sl: new Map(),
-  views: new Map(), shots: new Map(), itemViews: new Map(), cam: { x: 0, y: 0, z: 1 },
+  views: new Map(), drawn: new Map(), shots: new Map(), itemViews: new Map(), cam: { x: 0, y: 0, z: 1 },
   dust: [], rays: [], floats: [], puffs: [],
 };
 let DELAY = 0.12; // interpolation delay (s): grows with the network's jitter (see onSnap)
@@ -44,6 +44,7 @@ const SFX = {
   pop(x, y) { const k = this.near(x, y); if (k > 0.05) this.noise(0.06, 1800, 0.08 * k); },
   boom(x, y) { const k = this.near(x, y); if (k > 0.05) { this.noise(0.4, 300, 0.35 * k); this.tone(120, 40, 0.4, 'sine', 0.3 * k); } },
   hit(mine) { this.tone(mine ? 180 : 320, mine ? 90 : 160, 0.12, 'sine', mine ? 0.28 : 0.14); },
+  thwack(dmg) { this.noise(0.07, 900, 0.22); this.tone(dmg >= 20 ? 160 : 240, 70, 0.12, 'square', 0.09); }, // one of my shots landed
   jump(boost) { this.tone(boost ? 220 : 330, boost ? 880 : 620, boost ? 0.32 : 0.14, 'sine', 0.16); },
   fall() { this.tone(900, 120, 0.8, 'sine', 0.18); },
   launch() { this.tone(160, 900, 0.45, 'triangle', 0.18); this.noise(0.3, 700, 0.12); },
@@ -89,7 +90,7 @@ function startMatch(m) {
   for (const [id, team, slot, name, bot] of m.players) G.info.set(id, { team, slot, name, bot });
   G.teams = Math.max(...m.players.map((p) => p[1])) + 1;
   G.map = SIM.makeMap(m.seed);
-  G.snaps = []; G.off = null; G.offW = []; DELAY = 0.12; G.pend = []; G.seq = 0; G.me = null; G.prev = null; G.shots.clear(); G.acc = 0; G.items = []; G.bt = new Map(); G.sl = new Map();
+  G.snaps = []; G.off = null; G.offW = []; DELAY = 0.12; G.pend = []; G.seq = 0; G.me = null; G.prev = null; G.shots.clear(); G.drawn.clear(); G.shotCd = 0; G.acc = 0; G.items = []; G.bt = new Map(); G.sl = new Map();
   G.W = { t: 0, on: new Set(), mate: null }; G.last = null;
   buildScene();
   if (window.R3D && R3D.on && R3D.menu) R3D.menu(false); // [3D] leave the home backdrop
@@ -317,9 +318,12 @@ function onSnap(m) {
   G.bt = new Map(m.bt); G.sl = new Map(m.sl);
   // shots: positions at this snapshot's time
   const live = new Set();
-  for (const [id, x, y, vx, vy, team, w, z] of m.s) { live.add(id); let s = G.shots.get(id); if (!s) { s = { id, team, w, v: shotView(team, w) }; G.shots.set(id, s); } Object.assign(s, { x, y, z, vx, vy, t: st }); }
-  for (const [id, s] of G.shots) if (!live.has(id)) { s.v.destroy(); G.shots.delete(id); }
-  for (const e of m.e) { onEvent(e); if (window.R3D && R3D.on) R3D.event(e); } // [3D] effects
+  for (const [id, x, y, vx, vy, team, w, z, o] of m.s) {
+    if (o === G.myId) continue; // mine are drawn the moment I fire (fireLocal)
+    live.add(id); let s = G.shots.get(id); if (!s) { s = { id, team, w, v: shotView(team, w) }; G.shots.set(id, s); } Object.assign(s, { x, y, z, vx, vy, t: st });
+  }
+  for (const [id, s] of G.shots) if (!live.has(id) && !s.local) { s.v.destroy(); G.shots.delete(id); }
+  for (const e of m.e) { if (e[0] === 'shot' && e[1] === G.myId) continue; onEvent(e); if (window.R3D && R3D.on) R3D.event(e); } // [3D] effects; my shots were shown already
   // reconcile the local player: start from the server, replay the inputs it has not seen yet
   const a = pl.get(G.myId), mt = pl.get(mateOf(G.myId));
   G.W.mate = mt ? { x: mt[1], y: mt[2], z: mt[6], st: mt[5], brace: !!mt[26] } : null;
@@ -335,6 +339,40 @@ function onSnap(m) {
     G.me = base; G.meRaw = a;
     if (!G.prev) G.prev = { x: base.x, y: base.y, z: base.z };
   }
+}
+/* my own shots: shown the instant I fire, flying on my screen; the server's copies are not drawn */
+let lshotN = 0;
+function fireLocal(me, inp) {
+  const a = G.meRaw, I = G.info.get(G.myId); if (!a || !I) return;
+  const w = a[15], W = SIM.WEAPONS[w];
+  if (w && a[16] <= 0) return;
+  G.shotCd = W.cd;
+  for (let k = 0; k < W.n; k++) {
+    const ang = inp.a + (W.n > 1 ? (k / (W.n - 1) - 0.5) * W.spread : (Math.random() - 0.5) * W.spread), ca = Math.cos(ang), sa = Math.sin(ang), off = W.melee ? 4 : C.R + 6;
+    const id = 'L' + ++lshotN;
+    G.shots.set(id, { id, local: true, team: I.team, w, x: me.x + ca * off, y: me.y + sa * off, z: me.z, vx: ca * W.speed, vy: sa * W.speed, life: W.life, t: 0, v: shotView(I.team, w) });
+  }
+  SFX.shot(me.x, me.y, w);
+  if (window.R3D && R3D.on) R3D.event(['shot', G.myId, w]); // [3D] recoil and muzzle puff
+}
+function flyLocalShots(dt) {
+  for (const [id, s] of G.shots) {
+    if (!s.local) continue;
+    const W = SIM.WEAPONS[s.w]; let gone = false;
+    s.life -= dt; s.x += s.vx * dt; s.y += s.vy * dt;
+    if (!W.lob && SIM.blocked(G.map, G.W, s.x, s.y, 5, s.z)) { gone = true; puff(s.x, s.y - 26, 0xffe2b0, 4); }
+    else if (!W.lob) for (const [pid, d] of G.drawn) { // stops on whoever it reaches on my screen; the server decides the hit
+      const I = G.info.get(pid); if (!I || I.team === s.team || d[2]) continue;
+      if (Math.hypot(d[0] - s.x, d[1] - s.y) < C.R + (W.melee ? 14 : 6)) { if (!W.melee) gone = true; break; }
+    }
+    if (s.life <= 0) gone = true;
+    if (gone) { s.v.destroy(); G.shots.delete(id); continue; }
+    s.t = G.rt + DELAY * 0.5; // the renderers then draw it right where it is
+  }
+}
+function hitMark(big) { // a quick ✕ at the cursor when one of my shots lands
+  const el = $('hitmark'); if (!el || TOUCH) return;
+  el.style.left = IN.mx + 'px'; el.style.top = IN.my + 'px'; el.classList.remove('on', 'big'); void el.offsetWidth; el.classList.add('on'); if (big) el.classList.add('big');
 }
 function predict(p, inp) {
   G.W.t = G.predT;
@@ -359,7 +397,13 @@ function onEvent(e) {
   const t = e[0], I = (id) => G.info.get(id) || { name: '?' };
   const pos = (id) => { const v = G.views.get(id); return v ? { x: v.root.x, y: v.root.y } : null; };
   const mine = G.info.get(G.myId) || { team: -1 };
-  if (t === 'hit') { const p = pos(e[1]); if (p) { floatText(p.x, p.y - 70, '-' + e[2], e[1] === G.myId ? '#ff6b6b' : '#ffffff'); if (e[1] === G.myId) { SFX.hit(true); G.shake = 6; } else SFX.hit(false); } }
+  if (t === 'hit') {
+    const p = pos(e[1]);
+    if (p) { floatText(p.x, p.y - 70, '-' + e[2], e[1] === G.myId ? '#ff6b6b' : e[4] === G.myId ? '#ffd27a' : '#ffffff'); puff(p.x, p.y - 40, 0xfff4d0, 6); }
+    if (e[1] === G.myId) { SFX.hit(true); G.shake = Math.max(G.shake || 0, 7); }
+    else if (e[4] === G.myId) { SFX.thwack(e[2]); G.shake = Math.max(G.shake || 0, 2.5); hitMark(e[2] >= 20); }
+    else SFX.hit(false);
+  }
   else if (t === 'shot') { const p = pos(e[1]); if (p) SFX.shot(p.x, p.y, e[2]); }
   else if (t === 'pop') { puff(e[1], e[2], 0xffe2b0, 6); SFX.pop(e[1], e[2]); }
   else if (t === 'boom') { puff(e[1], e[2], 0xffc070, 26); puff(e[1], e[2], 0xb48cff, 12); SFX.boom(e[1], e[2]); if (Math.hypot(e[1] - G.vis.x, e[2] - G.vis.y) < 500) G.shake = 10; }
@@ -376,7 +420,7 @@ function onEvent(e) {
   else if (t === 'ko') { // knocked off: a point for the pusher's duo
     const by = I(e[2]), good = by.team === mine.team;
     feed(`${by.name} đẩy ${I(e[1]).name} rơi · +1 ${good ? 'đội bạn' : teamName(by.team)}`);
-    if (e[2] === G.myId) { SFX.cap(true); flashMsg('+1 điểm!', `Bạn đẩy ${I(e[1]).name} rơi`); }
+    if (e[2] === G.myId) { SFX.cap(true); G.shake = Math.max(G.shake || 0, 8); flashMsg('+1 điểm!', `Bạn đẩy ${I(e[1]).name} rơi`); }
     else if (e[1] === G.myId) { SFX.cap(false); flashMsg('Bạn bị đẩy rơi!', `+1 cho ${teamName(by.team)}`); }
     else if (good) SFX.cap(true);
   }
@@ -457,7 +501,7 @@ function readInput() {
   } else if (TOUCH && (mx || my) && !IN.touch.R) a = Math.atan2(my, mx);
   IN.aim = a;
   const use = !!(k.KeyF || k.KeyE || IN.useTouch);
-  const inp = { s: ++G.seq, mx, my, a: Math.round(a * 1000) / 1000, f: fire ? 1 : 0, j: IN.jump ? 1 : 0, i: use ? 1 : 0 };
+  const inp = { s: ++G.seq, mx, my, a: Math.round(a * 1000) / 1000, f: fire ? 1 : 0, j: IN.jump ? 1 : 0, i: use ? 1 : 0, v: Math.round((G.rt || 0) * C.TICK) }; // v: the tick the others are drawn at
   IN.jump = false;
   return inp;
 }
@@ -478,10 +522,12 @@ function frame(ticker) {
     if (me && me.st !== 2 && !me.fly && !(me.fall > 0)) {
       G.prev = { x: me.x, y: me.y, z: me.z }; G.pend.push(inp); predict(me, inp);
       if (me.jumped) SFX.jump(me.jumped === 2);
+      G.shotCd = Math.max(0, (G.shotCd || 0) - C.DT);
+      if (inp.f && me.st === 0 && G.shotCd <= 0) fireLocal(me, inp);
     }
   }
   const drawT = G.predT + G.acc;
-  const rt = now + (G.off || 0) - DELAY;
+  const rt = now + (G.off || 0) - DELAY; G.rt = rt;
   // where everyone is: interpolate between the two snapshots around rt
   let A = null, B = null;
   for (let i = G.snaps.length - 1; i >= 0; i--) if (G.snaps[i].t <= rt) { A = G.snaps[i]; B = G.snaps[i + 1] || A; break; }
@@ -505,11 +551,13 @@ function frame(ticker) {
     const held = mine && G.me && L2[5] !== 2 && !G.me.fly && (predicting || G.me.fall > 0); // predicted, or frozen where it slipped off
     if (held) { x = G.vis.x; y = G.vis.y; z = G.vis.z; }
     else if (mine && L2[5] !== 2) { G.vis.x = x; G.vis.y = y; G.vis.z = z; }
+    G.drawn.set(id, [x, y, L2[5] === 2 || L2[17] > 0 ? 1 : 0]);
     const ang = mine ? IN.aim : (a[3] + angDiff(a[3], b[3]) * f) / 100;
     drawPlayer(v, id, x, y, z, ang, L2, dt, now, mine);
     if (R3D.on) R3D.player(id, x, y, z, ang, L2, dt, now, mine); // [3D]
   }
   // shots: straight lines from their snapshot positions
+  flyLocalShots(dt);
   for (const s of G.shots.values()) { const t = SIM.clamp(rt - s.t + DELAY * 0.5, -0.1, 0.4); s.v.x = s.x + s.vx * t; s.v.y = s.y + s.vy * t - 26 - (s.z || 0) * LIFT; }
   if (!R3D.on) drawWorld(dt, now, drawT, latest); // [3D] the Pixi world is not drawn in 3D
   updateFx(dt);

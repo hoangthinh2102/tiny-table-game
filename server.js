@@ -155,8 +155,8 @@ wss.on('connection', (ws) => {
       c.room = r; r.clients.set(c.id, c); c.queue = []; c.started = false; c.last = null; lobbyInfo(r);
     } else if (m.t === 'start' && c.room && c.room.code && c.room.host === c.id && c.room.state === 'lobby') startMatch(c.room);
     else if (m.t === 'in' && c.room && c.room.state === 'play') {
-      // input: s seq, mx my (-1..1), a angle, f fire (held), j jump (pressed), i interact (held)
-      const inp = { s: m.s | 0, mx: clampN(m.mx), my: clampN(m.my), a: +m.a || 0, f: m.f ? 1 : 0, j: m.j ? 1 : 0, i: m.i ? 1 : 0 };
+      // input: s seq, mx my (-1..1), a angle, f fire (held), j jump (pressed), i interact (held), v the tick on screen
+      const inp = { s: m.s | 0, mx: clampN(m.mx), my: clampN(m.my), a: +m.a || 0, f: m.f ? 1 : 0, j: m.j ? 1 : 0, i: m.i ? 1 : 0, v: m.v | 0 };
       c.queue.push(inp); if (c.queue.length > 20) c.queue.shift(); // way behind (a stalled tab): drop the oldest
     } else if (m.t === 'leave') leave(c);
     else if (m.t === 'ping') send(ws, { t: 'pong', c: m.c });

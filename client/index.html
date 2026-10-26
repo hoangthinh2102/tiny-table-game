@@ -131,6 +131,9 @@ html.r3d .home { background: linear-gradient(90deg, rgba(26,18,44,.86) 0%, rgba(
 #menuBtn { position: absolute; right: calc(12px + env(safe-area-inset-right)); top: calc(12px + env(safe-area-inset-top)); width: 42px; height: 42px; border: 0; border-radius: 14px; pointer-events: auto; cursor: pointer;
   background: rgba(255,247,234,.92); color: var(--ink); font: 900 16px var(--font); box-shadow: 0 4px 0 rgba(150,104,62,.45), 0 8px 16px rgba(20,10,40,.3), inset 0 2px 0 #fff; }
 .touchui #menuBtn { width: 38px; height: 38px; top: calc(10px + env(safe-area-inset-top)); }
+#hitmark { position: absolute; transform: translate(-50%, -50%) scale(.6); color: #fff; font: 900 26px var(--font); text-shadow: 0 0 6px #ff6b4a, 0 2px 0 #2a1f3d; opacity: 0; pointer-events: none; }
+#hitmark.on { animation: hm .22s ease-out; } #hitmark.big { color: #ffd27a; font-size: 36px; }
+@keyframes hm { 0% { opacity: 1; transform: translate(-50%, -50%) scale(1.25); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(.8); } }
 #pause .card { width: min(360px, 100%); } #pause .tag { margin-bottom: 4px; }
 #pause .screen, .screen.dim { background: rgba(26,18,44,.62); backdrop-filter: blur(3px); }
 #info b, #weapon b { font: 800 20px var(--display); color: var(--coral); margin-left: 6px; }
@@ -227,6 +230,7 @@ html.r3d .home { background: linear-gradient(90deg, rgba(26,18,44,.86) 0%, rgba(
   <div id="msg"></div>
   <div id="hint" class="hidden"></div>
   <button id="menuBtn" title="Tạm dừng (Esc)">❚❚</button>
+  <div id="hitmark">✕</div>
   <button id="jumpBtn" class="btnT">NHẢY</button>
   <button id="useBtn" class="btnT">DÙNG</button>
   <button id="lookBtn" class="btnT">XEM</button>

@@ -31,7 +31,7 @@
     SLING_T: 0.5, SLING_CD: 4, SLING_RANGE: 620, SHOCK_R: 150, SHOCK_DMG: 12, SHOCK_PUSH: 650,
     MARBLE_R: 70, MARBLE_SPEED: 650, MARBLE_DMG: 25, MARBLE_PUSH: 1000, MARBLE_WARN: 3,
     CRUMBLE_WARN: 3, CRUMBLE_T: 18,
-    KO_T: 5, KB_HURT: 1.5, KB_DOWN: 2.2, MATCH_T: 360, SCORE_WIN: 15,
+    KO_T: 5, KB_HURT: 1.5, KB_DOWN: 2.2, KB_HOP: 460, LAG_MAX: 9, MATCH_T: 360, SCORE_WIN: 15,
     BOARD: 650, TILE: 130, RING_IN: 900, RING_OUT: 1120, TOWER_Z: 140,
     PLAT_PERIOD: 7.6, PLAT_DWELL: 1.3,
   };
@@ -421,7 +421,7 @@
     if (p.armor > 0 && kind !== 'fall') { const a = Math.min(p.armor, d); p.armor -= a; d -= a; }
     p.hp -= d;
     if (from) from.dmg += dmg;
-    ev(S, ['hit', p.id, Math.round(dmg), kind || 'shot']);
+    ev(S, ['hit', p.id, Math.round(dmg), kind || 'shot', from ? from.id : 0]);
     if (p.hp <= 0) {
       p.hp = 0;
       const q = partnerOf(S, p);
@@ -433,6 +433,8 @@
     if (p.inv > 0 || p.st === 2) return;
     const k = p.st === 1 ? C.KB_DOWN : 1 + C.KB_HURT * (1 - p.hp / C.HP);
     p.kx += x * k; p.ky += y * k;
+    const f = Math.hypot(x, y) * k; // a hard hit lifts you off your feet, so it reads as a hit and not a slide
+    if (f > 160 && !p.fly && p.vz <= 0) { p.vz = Math.min(C.KB_HOP, f * 0.5); p.air = C.COYOTE; }
   }
   SIM.kbMul = (hp, st) => (st === 1 ? C.KB_DOWN : 1 + C.KB_HURT * (1 - hp / C.HP));
   function ko(S, p, by) { // knocked off by an enemy: a point for their duo
@@ -542,7 +544,7 @@
     for (let k = 0; k < W.n; k++) {
       const a = p.a + (W.n > 1 ? (k / (W.n - 1) - 0.5) * W.spread : (Math.random() - 0.5) * W.spread);
       const ca = Math.cos(a), sa = Math.sin(a), off = W.melee ? 4 : C.R + 6;
-      S.shots.push({ id: S.nextShot++, o: p.id, team: p.team, w: p.w, x: p.x + ca * off, y: p.y + sa * off, z: p.z, vx: ca * W.speed, vy: sa * W.speed, life: W.life * (W.melee ? 1 : 0.9 + Math.random() * 0.2), hit: W.n > 1 ? [] : null });
+      S.shots.push({ id: S.nextShot++, o: p.id, lag: p.lag || 0, team: p.team, w: p.w, x: p.x + ca * off, y: p.y + sa * off, z: p.z, vx: ca * W.speed, vy: sa * W.speed, life: W.life * (W.melee ? 1 : 0.9 + Math.random() * 0.2), hit: W.n > 1 ? [] : null });
     }
     if (p.w) { p.ammo--; if (p.ammo <= 0) { p.w = 0; p.ammo = 0; } }
     ev(S, ['shot', p.id, p.w]);
@@ -602,6 +604,8 @@
         continue;
       }
       const inp = inputs[p.id] || {};
+      // lag compensation: the tick this player's screen showed the others at (sent with each input; bots see now)
+      p.lag = inp.v ? clamp(S.tick - inp.v, 0, C.LAG_MAX) : 0;
       p.a = inp.a ?? p.a;
       p.shotCd = Math.max(0, p.shotCd - dt); p.spinCd = Math.max(0, p.spinCd - dt); p.inv = Math.max(0, p.inv - dt);
       W.mate = q;
@@ -678,6 +682,11 @@
     for (let i = S.items.length - 1; i >= 0; i--) { const it = S.items[i]; it.life -= dt; it.blockT -= dt; if (it.life <= 0) S.items.splice(i, 1); }
     for (const c of m.chests) if (c.open) { c.back -= dt; if (c.back <= 0) { c.open = false; ev(S, ['chestBack', c.id]); } }
 
+    // where everyone stood, tick by tick, for the last half second (shots test against what their shooter saw)
+    const H = S.hist || (S.hist = []), now = new Map();
+    for (const p of S.players) now.set(p.id, [p.x, p.y]);
+    H[S.tick % 16] = { tick: S.tick, at: now };
+    const seen = (p, lag) => { const h = lag > 0 && H[(S.tick - lag) % 16]; const a = h && h.tick === S.tick - lag && h.at.get(p.id); return a || [p.x, p.y]; };
     // shots
     for (let i = S.shots.length - 1; i >= 0; i--) {
       const s = S.shots[i], n = 3, Wp = WEAPONS[s.w]; let gone = false;
@@ -686,7 +695,8 @@
         if (!Wp.lob && SIM.blocked(m, W, s.x, s.y, 5, s.z)) { gone = true; ev(S, ['pop', Math.round(s.x), Math.round(s.y)]); break; }
         for (const p of S.players) {
           if (p.team === s.team || p.st === 2 || p.fall > 0 || (s.hit && s.hit.includes(p.id))) continue;
-          if (Math.hypot(p.x - s.x, p.y - s.y) < C.R + (Wp.melee ? 14 : 6)) {
+          const [px, py] = seen(p, s.lag);
+          if (Math.hypot(px - s.x, py - s.y) < C.R + (Wp.melee ? 14 : 6)) {
             if (Wp.boom) { boom(S, s); gone = true; break; }
             const sp = Math.hypot(s.vx, s.vy) || 1;
             hurt(S, p, Wp.dmg, S.players.find((o) => o.id === s.o), 'shot'); push(p, s.vx / sp * Wp.kb, s.vy / sp * Wp.kb);
@@ -716,7 +726,7 @@
     Math.round(p.z), Math.ceil(p.bleed), Math.round(p.rev * 10), Math.ceil(p.armor), Math.round(p.vx), Math.round(p.vy), Math.round(p.kx), Math.round(p.ky), p.kills,
     p.w, p.w ? p.ammo : -1, Math.round(p.fall * 10), p.fly ? 1 : 0, p.open ? Math.min(10, Math.round(p.open.t / p.open.T * 10)) : 0,
     Math.ceil(p.respawn), Math.round(p.vz), p.boost ? 1 : 0, Math.round(p.air * 100), p.inv > 0 ? 1 : 0, p.deaths, p.brace ? 1 : 0]);
-  SIM.encodeShots = (S) => S.shots.map((s) => [s.id, Math.round(s.x), Math.round(s.y), Math.round(s.vx), Math.round(s.vy), s.team, s.w, Math.round(s.z)]);
+  SIM.encodeShots = (S) => S.shots.map((s) => [s.id, Math.round(s.x), Math.round(s.y), Math.round(s.vx), Math.round(s.vy), s.team, s.w, Math.round(s.z), s.o]);
   SIM.encodeWorld = (S) => ({
     d: [...S.W.on], c: S.map.chests.filter((c) => c.open).map((c) => c.id),
     it: S.items.map((i) => [i.id, i.k, Math.round(i.x), Math.round(i.y), Math.round(i.z)]),

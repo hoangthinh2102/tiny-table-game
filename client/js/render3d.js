@@ -787,8 +787,9 @@
     // blink, hurt flash; low on health: a pulsing warm glow (lighter knocks send them further)
     blink(v, dt);
     const low = st === 0 && a[4] < 40 ? (1 - a[4] / 40) * (0.5 + 0.5 * Math.sin(now * (6 + (40 - a[4]) * 0.2))) : 0;
-    const er = Math.max(v.hurt * 0.6, low * 0.45), eg = v.hurt * 0.08 + low * 0.08;
-    v.mUp.emissive.setRGB(er, eg, eg * 0.6); v.mProp.emissive.copy(v.mUp.emissive);
+    const wf = Math.max(0, v.hurt - 0.65) * 2.6; // the first instant of a hit flashes white, then red fades out
+    const er = Math.max(v.hurt * 0.6, low * 0.45) + wf, eg = v.hurt * 0.08 + low * 0.08 + wf;
+    v.mUp.emissive.setRGB(er, eg, eg * 0.6 + wf); v.mProp.emissive.copy(v.mUp.emissive);
     v.body.rotation.z = low ? Math.sin(now * 9) * 0.06 * low : 0;
     v.root.visible = !(a[24] && Math.sin(now * 20) < -0.2); // just respawned: blinking, can't be hurt
     // on the ground: team ring and contact shadow; the boost zone around a bracing partner
@@ -933,7 +934,11 @@ void main() { vec4 t = texture2D(uTex, gl_PointCoord); gl_FragColor = vec4(vC * 
     const gz = (x, y) => { const g = SIM.groundAt(R.M, G.W, x, y); return g ? g.z || 0 : 0; };
     let v;
     switch (t) {
-      case 'hit': if ((v = P(e[1]))) { floatText(v.x, v.z + 112, v.y, '-' + e[2], e[1] === G.myId ? '#ff6b6b' : '#ffffff'); v.hurt = 1; } break;
+      case 'hit': if ((v = P(e[1]))) { // a white flash, a burst of sparks; bigger numbers for my own hits
+        const byMe = e[4] === G.myId;
+        floatText(v.x, v.z + 112, v.y, '-' + e[2], e[1] === G.myId ? '#ff6b6b' : byMe ? '#ffd27a' : '#ffffff', byMe);
+        v.hurt = 1; puff(v.x, v.z + 46, v.y, 0xfff4d0, byMe ? 12 : 7, 220); if (e[2] >= 20) puff(v.x, v.z + 46, v.y, 0xffb347, 8, 300);
+      } break;
       case 'shot': if ((v = P(e[1]))) { v.recoil = 1; const a = -v.yaw; puff(v.x + Math.cos(a) * 40, v.z + 30, v.y + Math.sin(a) * 40, 0xfff1c0, 2, 50); } break;
       case 'pop': puff(e[1], gz(e[1], e[2]) + 30, e[2], 0xffe2b0, 6, 90); break;
       case 'boom': { const z = gz(e[1], e[2]); puff(e[1], z + 30, e[2], 0xffc070, 26, 260); puff(e[1], z + 30, e[2], 0xb48cff, 12, 180); shock(e[1], z + 3, e[2], 125, '#ffcf7a'); break; }
