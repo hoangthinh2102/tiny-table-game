@@ -21,7 +21,8 @@ const G = {
   views: new Map(), shots: new Map(), itemViews: new Map(), cam: { x: 0, y: 0, z: 1 },
   dust: [], rays: [], floats: [], puffs: [],
 };
-const DELAY = 0.12; // interpolation delay (s)
+let DELAY = 0.12; // interpolation delay (s): grows with the network's jitter (see onSnap)
+const SNAP_GAP = 2 / C.TICK; // the server sends a snapshot every other tick
 
 /* ---------- audio: a few soft synth sounds ---------- */
 const SFX = {
@@ -88,7 +89,7 @@ function startMatch(m) {
   for (const [id, team, slot, name, bot] of m.players) G.info.set(id, { team, slot, name, bot });
   G.teams = Math.max(...m.players.map((p) => p[1])) + 1;
   G.map = SIM.makeMap(m.seed);
-  G.snaps = []; G.off = null; G.pend = []; G.seq = 0; G.me = null; G.prev = null; G.shots.clear(); G.acc = 0; G.items = []; G.bt = new Map(); G.sl = new Map();
+  G.snaps = []; G.off = null; G.offW = []; DELAY = 0.12; G.pend = []; G.seq = 0; G.me = null; G.prev = null; G.shots.clear(); G.acc = 0; G.items = []; G.bt = new Map(); G.sl = new Map();
   G.W = { t: 0, on: new Set(), mate: null }; G.last = null;
   buildScene();
   if (window.R3D && R3D.on && R3D.menu) R3D.menu(false); // [3D] leave the home backdrop
@@ -297,8 +298,15 @@ function gunTex(team, w) { G.guns = G.guns || {}; const k = team + '|' + w; retu
 /* ---------- snapshots ---------- */
 function onSnap(m) {
   const now = performance.now() / 1000, st = m.k / C.TICK;
-  const o = st - now;
-  if (G.off === null || o > G.off) G.off = o; else G.off += (o - G.off) * 0.02; // follow the fastest arrival, drift slowly
+  // clock: the server's time is our time plus an offset. Over the last 4 s the fastest arrival gives the offset, and
+  // the spread of arrivals (jitter) sets how far in the past we draw, so the next snapshot is nearly always there.
+  const o = st - now, W4 = G.offW || (G.offW = []);
+  W4.push([now, o]); while (W4.length && now - W4[0][0] > 4) W4.shift();
+  let hi = -1e9; for (const w of W4) if (w[1] > hi) hi = w[1];
+  const lows = W4.map((w) => w[1]).sort((a, b) => a - b), lo = lows[Math.floor(lows.length * 0.05)];
+  if (G.off === null || W4.length < 3) G.off = hi; else G.off += (hi - G.off) * 0.1;
+  const want = SIM.clamp(SNAP_GAP + (hi - lo) + 0.02, 0.09, 0.3);
+  DELAY += (want - DELAY) * (want > DELAY ? 0.3 : 0.03); // widen quickly, narrow slowly
   const pl = new Map(); for (const a of m.p) pl.set(a[0], a);
   G.snaps.push({ t: st, p: pl }); if (G.snaps.length > 40) G.snaps.shift();
   G.last = m;
@@ -480,18 +488,19 @@ function frame(ticker) {
   if (!A && G.snaps.length) A = B = G.snaps[0];
   if (!A) return;
   const f = B.t > A.t ? SIM.clamp((rt - A.t) / (B.t - A.t), 0, 1) : 0;
+  const ex = A === B ? SIM.clamp(rt - A.t, 0, 0.1) : 0; // past the newest snapshot: carry on for a moment instead of freezing
   // my drawn position: prediction, smoothed between steps, with corrections melting away
   const me = G.me, predicting = me && me.st !== 2 && !me.fly && !(me.fall > 0);
   if (predicting) {
     const al = G.acc / C.DT, P = G.prev || me;
-    const k = Math.pow(0.0005, dt); G.vis.ex = (G.vis.ex || 0) * k; G.vis.ey = (G.vis.ey || 0) * k;
+    const k = Math.pow(0.004, dt); G.vis.ex = (G.vis.ex || 0) * k; G.vis.ey = (G.vis.ey || 0) * k;
     G.vis.x = P.x + (me.x - P.x) * al + G.vis.ex; G.vis.y = P.y + (me.y - P.y) * al + G.vis.ey; G.vis.z = P.z + (me.z - P.z) * al;
   }
   const latest = G.snaps[G.snaps.length - 1];
   for (const [id] of G.info) {
     const a = A.p.get(id), b = B.p.get(id) || a, L2 = latest.p.get(id); if (!a || !L2) continue;
     const v = playerView(id);
-    let x = a[1] + (b[1] - a[1]) * f, y = a[2] + (b[2] - a[2]) * f, z = a[6] + (b[6] - a[6]) * f;
+    let x = a[1] + (b[1] - a[1]) * f + (a[17] ? 0 : a[10] * ex), y = a[2] + (b[2] - a[2]) * f + (a[17] ? 0 : a[11] * ex), z = a[6] + (b[6] - a[6]) * f;
     const mine = id === G.myId;
     const held = mine && G.me && L2[5] !== 2 && !G.me.fly && (predicting || G.me.fall > 0); // predicted, or frozen where it slipped off
     if (held) { x = G.vis.x; y = G.vis.y; z = G.vis.z; }

@@ -49,7 +49,17 @@ function openRoom(priv) {
   if (!priv) for (const r of rooms) if (!r.code && r.state === 'lobby' && r.clients.size < ROOM_SIZE) return r;
   const r = { id: nextRoom++, code: priv ? newCode() : '', host: 0, state: 'lobby', clients: new Map(), wait: priv ? PRIVATE_IDLE : LOBBY_WAIT, S: null, inputs: {}, timer: null, endT: 0 };
   rooms.add(r);
-  r.timer = setInterval(() => { try { roomTick(r); } catch (e) { console.error('room', r.id, e); closeRoom(r); } }, 1000 / C.TICK);
+  // a fixed-rate clock: the tick that is due is worked out from the real time, so timer lateness (or a slow CPU) never
+  // makes the match run slower than 30 ticks a second; a stalled server catches up a few ticks at a time
+  const T = 1000 / C.TICK; r.t0 = performance.now(); r.ticks = 0;
+  const loop = () => {
+    if (!rooms.has(r)) return;
+    const due = Math.floor((performance.now() - r.t0) / T);
+    if (due - r.ticks > 30) r.ticks = due - 1; // more than a second behind: skip ahead rather than fast-forward
+    try { for (let n = 0; r.ticks < due && n < 4 && rooms.has(r); n++) { r.ticks++; roomTick(r); } } catch (e) { console.error('room', r.id, e); closeRoom(r); return; }
+    r.timer = setTimeout(loop, Math.max(1, r.t0 + (r.ticks + 1) * T - performance.now()));
+  };
+  r.timer = setTimeout(loop, T);
   return r;
 }
 function send(ws, m) { if (ws.readyState === 1) ws.send(JSON.stringify(m)); }
@@ -89,9 +99,16 @@ function roomTick(r) {
       if (p.bot) { inputs[p.id] = botInput(S, p); continue; }
       const c = r.clients.get(p.id);
       if (!c) { inputs[p.id] = {}; continue; }
-      // one queued input per tick (skip ahead if the client is ahead, so the queue never grows; keep any jump press)
-      let inp = c.queue.shift() || c.last || {};
-      if (c.queue.length > 3) { const skip = c.queue.splice(0, c.queue.length - 1); if (skip.some((x) => x.j)) inp = { ...inp, j: 1 }; inp = { ...skip[skip.length - 1], j: inp.j }; }
+      // every input is simulated exactly once, in order, so the client's prediction matches. A small buffer absorbs
+      // network jitter; a queue that grew after a burst is worked off with one extra movement step per tick.
+      if (!c.started) { if (c.queue.length < 2) { inputs[p.id] = { a: p.a }; continue; } c.started = true; }
+      if (c.queue.length > 4 && p.st === 0 && !p.fly && !(p.fall > 0)) {
+        const x = c.queue.shift(); S.W.mate = SIM.partnerOf(S, p); S.W.t = S.t;
+        const wasFall = p.fall > 0; SIM.move(S.map, p, x, C.DT, S.W); p.seq = x.s;
+        if (p.fall > 0 && !wasFall) { p.open = null; S.events.push(['fall', p.id]); }
+      }
+      let inp = c.queue.shift();
+      if (!inp) inp = c.last || {}; // starved: keep doing what they were doing
       if (inp.s) p.seq = inp.s;
       c.last = { ...inp, j: 0 }; // a jump is a press, not a hold
       inputs[p.id] = inp;
@@ -99,8 +116,11 @@ function roomTick(r) {
     SIM.step(S, inputs);
     const ev = S.events.splice(0);
     if (S.tick % SNAP_EVERY === 0 || ev.length) {
-      const base = { t: 'snap', k: S.tick, p: SIM.encodePlayers(S), s: SIM.encodeShots(S), ...SIM.encodeWorld(S), e: ev };
-      for (const c of r.clients.values()) { const p = S.players.find((q) => q.id === c.id); send(c.ws, { ...base, ack: p ? p.seq : 0 }); }
+      const body = JSON.stringify({ t: 'snap', k: S.tick, p: SIM.encodePlayers(S), s: SIM.encodeShots(S), ...SIM.encodeWorld(S), e: ev }).slice(1);
+      for (const c of r.clients.values()) { // one encoding for everyone, with each client's own ack in front
+        const p = S.players.find((q) => q.id === c.id);
+        if (c.ws.readyState === 1 && c.ws.bufferedAmount < 256 * 1024) c.ws.send('{"ack":' + (p ? p.seq : 0) + ',' + body);
+      }
     }
     if (S.over) {
       r.state = 'end'; r.endT = 8;
@@ -111,7 +131,7 @@ function roomTick(r) {
   }
   if (r.state === 'end') { r.endT -= 1 / C.TICK; if (r.endT <= 0) closeRoom(r); }
 }
-function closeRoom(r) { clearInterval(r.timer); rooms.delete(r); for (const c of r.clients.values()) { c.room = null; send(c.ws, { t: 'closed' }); } }
+function closeRoom(r) { clearTimeout(r.timer); rooms.delete(r); for (const c of r.clients.values()) { c.room = null; send(c.ws, { t: 'closed' }); } }
 
 /* ---------- connections ---------- */
 const wss = new WebSocketServer({ server, maxPayload: 4096 });
@@ -132,12 +152,12 @@ wss.on('connection', (ws) => {
         if (r.clients.size >= ROOM_SIZE) return send(ws, { t: 'err', msg: 'Phòng ' + code + ' đã đủ người' });
       } else r = openRoom(m.mode === 'create');
       if (r.code && !r.host) r.host = c.id;
-      c.room = r; r.clients.set(c.id, c); c.queue = []; lobbyInfo(r);
+      c.room = r; r.clients.set(c.id, c); c.queue = []; c.started = false; c.last = null; lobbyInfo(r);
     } else if (m.t === 'start' && c.room && c.room.code && c.room.host === c.id && c.room.state === 'lobby') startMatch(c.room);
     else if (m.t === 'in' && c.room && c.room.state === 'play') {
       // input: s seq, mx my (-1..1), a angle, f fire (held), j jump (pressed), i interact (held)
       const inp = { s: m.s | 0, mx: clampN(m.mx), my: clampN(m.my), a: +m.a || 0, f: m.f ? 1 : 0, j: m.j ? 1 : 0, i: m.i ? 1 : 0 };
-      c.queue.push(inp); if (c.queue.length > 8) c.queue.shift();
+      c.queue.push(inp); if (c.queue.length > 20) c.queue.shift(); // way behind (a stalled tab): drop the oldest
     } else if (m.t === 'leave') leave(c);
     else if (m.t === 'ping') send(ws, { t: 'pong', c: m.c });
   });
